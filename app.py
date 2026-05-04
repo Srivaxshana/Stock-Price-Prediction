@@ -1,47 +1,28 @@
+import math
+import os
+
+import numpy as np
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 import streamlit as st
-import os
-import numpy as np
-try:
-    import joblib
-    import tensorflow as tf
-except Exception:
-    joblib = None
-    tf = None
+from sklearn.metrics import mean_squared_error
+from sklearn.preprocessing import MinMaxScaler
 
-st.set_page_config(page_title="Stock Dashboard", page_icon="📈", layout="wide")
+st.set_page_config(page_title="Stock Price Prediction", page_icon="📈", layout="wide")
 
-# Light styling for a cleaner look
 st.markdown(
     """
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;800&display=swap');
-
-    html, body, [class*="css"] {
-        font-family: 'Manrope', sans-serif;
-    }
-
+    html, body, [class*="css"] { font-family: 'Manrope', sans-serif; }
     .hero {
         background: linear-gradient(120deg, #e8f7ff 0%, #fff7ec 100%);
-        border: 1px solid #d8e6f5;
-        border-radius: 16px;
-        padding: 1rem 1.2rem;
-        margin-bottom: 1rem;
+        border: 1px solid #d8e6f5; border-radius: 16px;
+        padding: 1rem 1.2rem; margin-bottom: 1rem;
     }
-
-    .hero h2 {
-        color: #0f172a !important;
-    }
-
-    .hero p {
-        color: #1f2937 !important;
-    }
-
-    .small-note {
-        color: #4a5568;
-        font-size: 0.9rem;
-    }
+    .hero h2 { color: #0f172a !important; }
+    .hero p  { color: #1f2937 !important; }
     </style>
     """,
     unsafe_allow_html=True,
@@ -50,12 +31,19 @@ st.markdown(
 st.markdown(
     """
     <div class="hero">
-        <h2 style="margin: 0;">Stock Price Explorer</h2>
-        <p style="margin: 0.35rem 0 0 0;">Simple UI to explore trends, moving averages, returns, and volatility.</p>
+        <h2 style="margin:0;">📈 Stock Price Prediction — LSTM Model</h2>
+        <p style="margin:0.35rem 0 0 0;">
+            EC6301 Artificial Intelligence Mini Project &nbsp;|&nbsp;
+            University of Ruhuna &nbsp;|&nbsp; LSTM-based deep learning for stock price forecasting
+        </p>
     </div>
     """,
     unsafe_allow_html=True,
 )
+
+LOOKBACK   = 60
+MODEL_PATH = "lstm_model.keras"
+DATA_PATH  = "all_stocks_5yr.csv"
 
 
 @st.cache_data
@@ -66,16 +54,30 @@ def load_data(path: str) -> pd.DataFrame:
     return df
 
 
-df = load_data("all_stocks_5yr.csv")
+@st.cache_resource
+def load_model():
+    if not os.path.exists(MODEL_PATH):
+        return None
+    try:
+        import tensorflow as tf
+        return tf.keras.models.load_model(MODEL_PATH)
+    except Exception:
+        return None
 
+
+df    = load_data(DATA_PATH)
+model = load_model()
+
+# ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.header("Filters")
-    companies = sorted(df["Name"].unique().tolist())
-    selected_company = st.selectbox("Company", companies, index=0)
+    companies    = sorted(df["Name"].unique().tolist())
+    default_idx  = companies.index("AAPL") if "AAPL" in companies else 0
+    selected_company = st.selectbox("Company", companies, index=default_idx)
 
     company_df = df[df["Name"] == selected_company].copy()
-    min_date = company_df["date"].min().date()
-    max_date = company_df["date"].max().date()
+    min_date   = company_df["date"].min().date()
+    max_date   = company_df["date"].max().date()
 
     date_range = st.date_input(
         "Date range",
@@ -83,93 +85,234 @@ with st.sidebar:
         min_value=min_date,
         max_value=max_date,
     )
-
     if isinstance(date_range, tuple) and len(date_range) == 2:
         start_date, end_date = date_range
     else:
         start_date, end_date = min_date, max_date
 
-filtered = company_df[(company_df["date"].dt.date >= start_date) & (company_df["date"].dt.date <= end_date)].copy()
+    st.divider()
+    if model is not None:
+        st.success("LSTM model loaded")
+    else:
+        st.warning(
+            "Model not found.  \n"
+            "Run the notebook first to train and save `lstm_model.keras`."
+        )
 
-if filtered.empty:
-    st.warning("No data found in selected range. Try a wider date range.")
-    st.stop()
+# ── Tabs ──────────────────────────────────────────────────────────────────────
+tab1, tab2, tab3 = st.tabs(["📊 Explorer", "🤖 LSTM Prediction", "📋 Raw Data"])
 
-filtered["MA_20"] = filtered["close"].rolling(20).mean()
-filtered["MA_50"] = filtered["close"].rolling(50).mean()
-filtered["daily_return"] = filtered["close"].pct_change()
+# ═════════════════════════════════════════════════════════════════════════════
+# TAB 1 — Explorer
+# ═════════════════════════════════════════════════════════════════════════════
+with tab1:
+    filtered = company_df[
+        (company_df["date"].dt.date >= start_date) &
+        (company_df["date"].dt.date <= end_date)
+    ].copy()
 
-latest_close = filtered["close"].iloc[-1]
-first_close = filtered["close"].iloc[0]
-period_change = ((latest_close - first_close) / first_close) * 100
-avg_volume = filtered["volume"].mean()
-volatility = filtered["daily_return"].std()
+    if filtered.empty:
+        st.warning("No data found for the selected range.")
+        st.stop()
 
-c1, c2, c3, c4 = st.columns(4)
-c1.metric("Latest Close", f"${latest_close:,.2f}")
-c2.metric("Period Change", f"{period_change:+.2f}%")
-c3.metric("Avg Volume", f"{avg_volume:,.0f}")
-c4.metric("Volatility (Std Return)", f"{volatility:.4f}")
+    filtered["MA_20"]        = filtered["close"].rolling(20).mean()
+    filtered["MA_50"]        = filtered["close"].rolling(50).mean()
+    filtered["daily_return"] = filtered["close"].pct_change()
 
-chart_df = filtered[["date", "close", "MA_20", "MA_50"]].melt(
-    id_vars="date", var_name="Series", value_name="Price"
-)
+    latest_close  = filtered["close"].iloc[-1]
+    first_close   = filtered["close"].iloc[0]
+    period_change = ((latest_close - first_close) / first_close) * 100
+    avg_volume    = filtered["volume"].mean()
+    volatility    = filtered["daily_return"].std()
 
-fig = px.line(
-    chart_df,
-    x="date",
-    y="Price",
-    color="Series",
-    title=f"{selected_company}: Close Price and Moving Averages",
-    color_discrete_map={
-        "close": "#0f172a",
-        "MA_20": "#0ea5e9",
-        "MA_50": "#f97316",
-    },
-)
-fig.update_layout(legend_title_text="", hovermode="x unified")
-st.plotly_chart(fig, use_container_width=True)
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Latest Close",         f"${latest_close:,.2f}")
+    c2.metric("Period Change",        f"{period_change:+.2f}%")
+    c3.metric("Avg Daily Volume",     f"{avg_volume:,.0f}")
+    c4.metric("Volatility (Std Ret)", f"{volatility:.4f}")
 
-returns_fig = px.histogram(
-    filtered.dropna(subset=["daily_return"]),
-    x="daily_return",
-    nbins=60,
-    title=f"{selected_company}: Daily Return Distribution",
-    color_discrete_sequence=["#14b8a6"],
-)
-returns_fig.update_layout(bargap=0.05)
-st.plotly_chart(returns_fig, use_container_width=True)
+    chart_df = filtered[["date", "close", "MA_20", "MA_50"]].melt(
+        id_vars="date", var_name="Series", value_name="Price"
+    )
+    fig_ma = px.line(
+        chart_df, x="date", y="Price", color="Series",
+        title=f"{selected_company}: Closing Price with 20-Day and 50-Day Moving Averages",
+        color_discrete_map={"close": "#0f172a", "MA_20": "#0ea5e9", "MA_50": "#f97316"},
+    )
+    fig_ma.update_layout(legend_title_text="", hovermode="x unified")
+    st.plotly_chart(fig_ma, use_container_width=True)
 
-st.markdown("<p class='small-note'>Note: This UI is for analysis/visualization. Add your trained LSTM model file later to show forecast outputs here.</p>", unsafe_allow_html=True)
+    col_l, col_r = st.columns(2)
+    with col_l:
+        vol_fig = px.bar(
+            filtered, x="date", y="volume",
+            title=f"{selected_company}: Trading Volume",
+            color_discrete_sequence=["#6366f1"],
+        )
+        st.plotly_chart(vol_fig, use_container_width=True)
 
-st.subheader("Recent Data")
-st.dataframe(filtered.tail(20), use_container_width=True)
+    with col_r:
+        ret_fig = px.histogram(
+            filtered.dropna(subset=["daily_return"]),
+            x="daily_return", nbins=60,
+            title=f"{selected_company}: Daily Return Distribution",
+            color_discrete_sequence=["#14b8a6"],
+        )
+        ret_fig.update_layout(bargap=0.05)
+        st.plotly_chart(ret_fig, use_container_width=True)
 
-# Optional: model inference UI. Place trained models in `models/lstm_<TICKER>.h5` with scaler `models/scaler_<TICKER>.bin`.
-with st.expander('Forecast / Model (optional)'):
-    forecast_enabled = st.checkbox('Enable forecast (requires trained model in models/)')
-    if forecast_enabled:
-        horizon = st.number_input('Forecast horizon (days)', min_value=1, max_value=30, value=7)
-        model_path = os.path.join('models', f'lstm_{selected_company}.h5')
-        scaler_path = os.path.join('models', f'scaler_{selected_company}.bin')
-        if os.path.exists(model_path) and joblib is not None and tf is not None:
-            if st.button('Run forecast'):
-                scaler = joblib.load(scaler_path)
-                model = tf.keras.models.load_model(model_path)
-                arr = filtered['close'].values.reshape(-1, 1)
-                scaled = scaler.transform(arr)
-                seq_len = model.input_shape[1]
-                last_seq = scaled[-seq_len:].reshape(1, seq_len, 1)
-                preds = []
-                cur = last_seq.copy()
-                for _ in range(horizon):
-                    p = model.predict(cur, verbose=0)[0]
-                    preds.append(p)
-                    cur = np.append(cur[:, 1:, :], p.reshape(1, 1, 1), axis=1)
-                preds_inv = scaler.inverse_transform(np.array(preds).reshape(-1, 1)).flatten()
-                dates = pd.date_range(start=filtered['date'].max() + pd.Timedelta(days=1), periods=horizon, freq='B')
-                fc_df = pd.DataFrame({'date': dates, 'forecast': preds_inv})
-                st.line_chart(fc_df.set_index('date'))
-                st.write(fc_df)
+# ═════════════════════════════════════════════════════════════════════════════
+# TAB 2 — LSTM Prediction
+# ═════════════════════════════════════════════════════════════════════════════
+with tab2:
+    if model is None:
+        st.error(
+            "**LSTM model not found.**\n\n"
+            "Please run all cells in `stock-price-direction-forecasting-with-lstm.ipynb` "
+            "to train the model. The notebook will save `lstm_model.keras` in this folder. "
+            "Then refresh this page."
+        )
+    else:
+        st.markdown(f"### LSTM Prediction — {selected_company}")
+        st.caption(
+            f"Model trained on AAPL. Lookback window: {LOOKBACK} days. "
+            "Predictions use MinMax scaling and a 2-layer LSTM architecture."
+        )
+
+        stock_data = df[df["Name"] == selected_company][["date", "close"]].copy()
+        stock_data = stock_data.sort_values("date").reset_index(drop=True)
+
+        if len(stock_data) < LOOKBACK + 20:
+            st.warning(
+                f"Not enough trading days for {selected_company}. "
+                f"Need at least {LOOKBACK + 20} days."
+            )
         else:
-            st.info('Model not found or dependencies missing. Train with `run_train.py` and place outputs in `models/`')
+            close_vals = stock_data["close"].values.reshape(-1, 1)
+            scaler     = MinMaxScaler(feature_range=(0, 1))
+            scaled     = scaler.fit_transform(close_vals)
+
+            X, y = [], []
+            for i in range(LOOKBACK, len(scaled)):
+                X.append(scaled[i - LOOKBACK:i, 0])
+                y.append(scaled[i, 0])
+            X = np.array(X).reshape(-1, LOOKBACK, 1)
+            y = np.array(y)
+
+            split  = int(len(X) * 0.80)
+            X_test = X[split:]
+            y_test = y[split:]
+
+            with st.spinner("Running LSTM predictions..."):
+                y_pred_scaled = model.predict(X_test, verbose=0)
+
+            y_pred = scaler.inverse_transform(y_pred_scaled)
+            y_true = scaler.inverse_transform(y_test.reshape(-1, 1))
+
+            mse  = mean_squared_error(y_true, y_pred)
+            rmse = math.sqrt(mse)
+            mape = float(np.mean(np.abs((y_true - y_pred) / y_true)) * 100)
+
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("MSE",              f"{mse:.4f}")
+            m2.metric("RMSE",             f"${rmse:.2f}")
+            m3.metric("MAPE",             f"{mape:.2f}%")
+            m4.metric("Avg Actual Price", f"${float(y_true.mean()):.2f}")
+
+            test_dates = stock_data["date"].values[LOOKBACK + split:]
+
+            # Predicted vs Actual
+            fig_pred = go.Figure()
+            fig_pred.add_trace(go.Scatter(
+                x=test_dates, y=y_true.flatten(),
+                name="Actual Price",
+                line=dict(color="#0f172a", width=2),
+            ))
+            fig_pred.add_trace(go.Scatter(
+                x=test_dates, y=y_pred.flatten(),
+                name="LSTM Predicted",
+                line=dict(color="#ef4444", width=2, dash="dash"),
+            ))
+            fig_pred.update_layout(
+                title=f"{selected_company} — LSTM: Predicted vs Actual Closing Price (Test Set)",
+                xaxis_title="Date",
+                yaxis_title="Price (USD)",
+                hovermode="x unified",
+                legend=dict(orientation="h", y=1.1),
+            )
+            st.plotly_chart(fig_pred, use_container_width=True)
+
+            # Full timeline
+            all_dates    = stock_data["date"].values
+            train_actual = scaler.inverse_transform(scaled[: split + LOOKBACK])
+
+            fig_full = go.Figure()
+            fig_full.add_trace(go.Scatter(
+                x=all_dates[: split + LOOKBACK],
+                y=train_actual.flatten(),
+                name="Training Data (Actual)",
+                line=dict(color="#94a3b8", width=1),
+                opacity=0.7,
+            ))
+            fig_full.add_trace(go.Scatter(
+                x=test_dates, y=y_true.flatten(),
+                name="Test Actual",
+                line=dict(color="#0f172a", width=1.5),
+            ))
+            fig_full.add_trace(go.Scatter(
+                x=test_dates, y=y_pred.flatten(),
+                name="LSTM Predicted",
+                line=dict(color="#ef4444", width=1.5, dash="dash"),
+            ))
+            fig_full.add_vline(
+                x=str(test_dates[0])[:10],
+                line_dash="dot", line_color="#64748b",
+                annotation_text="Train / Test Split",
+            )
+            fig_full.update_layout(
+                title=f"{selected_company} — Full Timeline: Training Data + LSTM Predictions",
+                xaxis_title="Date",
+                yaxis_title="Price (USD)",
+                hovermode="x unified",
+            )
+            st.plotly_chart(fig_full, use_container_width=True)
+
+            # Next-day forecast
+            st.divider()
+            st.markdown("#### Next Trading Day Forecast")
+            last_seq    = scaled[-LOOKBACK:].reshape(1, LOOKBACK, 1)
+            next_scaled = model.predict(last_seq, verbose=0)
+            next_price  = float(scaler.inverse_transform(next_scaled)[0][0])
+            last_price  = float(close_vals[-1][0])
+            change      = next_price - last_price
+            pct         = (change / last_price) * 100
+
+            fa, fb, fc = st.columns(3)
+            fa.metric("Last Known Close",     f"${last_price:.2f}")
+            fb.metric(
+                "Predicted Next Close",
+                f"${next_price:.2f}",
+                f"{change:+.2f} ({pct:+.2f}%)",
+            )
+            fc.metric("Direction", "▲ UP" if change > 0 else "▼ DOWN")
+
+            st.caption(
+                "This forecast uses the last 60 trading days as input to the LSTM. "
+                "For academic use only — not financial advice."
+            )
+
+# ═════════════════════════════════════════════════════════════════════════════
+# TAB 3 — Raw Data
+# ═════════════════════════════════════════════════════════════════════════════
+with tab3:
+    st.markdown(f"### Raw Data — {selected_company}")
+    display_df = company_df[
+        (company_df["date"].dt.date >= start_date) &
+        (company_df["date"].dt.date <= end_date)
+    ].copy().sort_values("date", ascending=False)
+
+    st.dataframe(display_df, use_container_width=True)
+    st.caption(
+        f"{len(display_df)} rows shown | "
+        "Source: S&P 500 5-Year Dataset (Kaggle)"
+    )
