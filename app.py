@@ -1,6 +1,14 @@
 import pandas as pd
 import plotly.express as px
 import streamlit as st
+import os
+import numpy as np
+try:
+    import joblib
+    import tensorflow as tf
+except Exception:
+    joblib = None
+    tf = None
 
 st.set_page_config(page_title="Stock Dashboard", page_icon="📈", layout="wide")
 
@@ -136,3 +144,32 @@ st.markdown("<p class='small-note'>Note: This UI is for analysis/visualization. 
 
 st.subheader("Recent Data")
 st.dataframe(filtered.tail(20), use_container_width=True)
+
+# Optional: model inference UI. Place trained models in `models/lstm_<TICKER>.h5` with scaler `models/scaler_<TICKER>.bin`.
+with st.expander('Forecast / Model (optional)'):
+    forecast_enabled = st.checkbox('Enable forecast (requires trained model in models/)')
+    if forecast_enabled:
+        horizon = st.number_input('Forecast horizon (days)', min_value=1, max_value=30, value=7)
+        model_path = os.path.join('models', f'lstm_{selected_company}.h5')
+        scaler_path = os.path.join('models', f'scaler_{selected_company}.bin')
+        if os.path.exists(model_path) and joblib is not None and tf is not None:
+            if st.button('Run forecast'):
+                scaler = joblib.load(scaler_path)
+                model = tf.keras.models.load_model(model_path)
+                arr = filtered['close'].values.reshape(-1, 1)
+                scaled = scaler.transform(arr)
+                seq_len = model.input_shape[1]
+                last_seq = scaled[-seq_len:].reshape(1, seq_len, 1)
+                preds = []
+                cur = last_seq.copy()
+                for _ in range(horizon):
+                    p = model.predict(cur, verbose=0)[0]
+                    preds.append(p)
+                    cur = np.append(cur[:, 1:, :], p.reshape(1, 1, 1), axis=1)
+                preds_inv = scaler.inverse_transform(np.array(preds).reshape(-1, 1)).flatten()
+                dates = pd.date_range(start=filtered['date'].max() + pd.Timedelta(days=1), periods=horizon, freq='B')
+                fc_df = pd.DataFrame({'date': dates, 'forecast': preds_inv})
+                st.line_chart(fc_df.set_index('date'))
+                st.write(fc_df)
+        else:
+            st.info('Model not found or dependencies missing. Train with `run_train.py` and place outputs in `models/`')
