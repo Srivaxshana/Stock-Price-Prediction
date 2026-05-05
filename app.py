@@ -264,10 +264,18 @@ with tab2:
                 name="LSTM Predicted",
                 line=dict(color="#ef4444", width=1.5, dash="dash"),
             ))
-            fig_full.add_vline(
-                x=str(test_dates[0])[:10],
-                line_dash="dot", line_color="#64748b",
-                annotation_text="Train / Test Split",
+            fig_full.add_shape(
+                type="line",
+                x0=pd.Timestamp(test_dates[0]),
+                x1=pd.Timestamp(test_dates[0]),
+                y0=0, y1=1, xref="x", yref="paper",
+                line=dict(dash="dot", color="#64748b"),
+            )
+            fig_full.add_annotation(
+                x=pd.Timestamp(test_dates[0]),
+                y=1.02, xref="x", yref="paper",
+                text="Train / Test Split",
+                showarrow=False, font=dict(color="#64748b"),
             )
             fig_full.update_layout(
                 title=f"{selected_company} — Full Timeline: Training Data + LSTM Predictions",
