@@ -1,7 +1,7 @@
 """
 run_train_all.py
 ----------------
-Downloads live data for top 50 S&P 500 companies using yfinance,
+Downloads live data for ALL S&P 500 companies using yfinance,
 trains one general LSTM model on all of them, and saves it to
 models/lstm_general.keras
 
@@ -9,7 +9,7 @@ Run:
     pip install yfinance
     python run_train_all.py
 
-Training takes approximately 30-60 minutes depending on your machine.
+Training takes approximately 2-8 hours for all 500 companies.
 """
 
 import math
@@ -30,18 +30,30 @@ BATCH_SIZE  = 64
 MODEL_SAVE  = "models/lstm_general.keras"
 START_DATE  = "2013-01-01"
 
-TOP_50 = [
-    "AAPL", "MSFT", "GOOGL", "AMZN", "META",
-    "TSLA", "NVDA", "JPM",  "V",    "JNJ",
-    "WMT",  "PG",   "MA",   "UNH",  "HD",
-    "BAC",  "XOM",  "ABBV", "MRK",  "CVX",
-    "LLY",  "AVGO", "COST", "PEP",  "KO",
-    "ADBE", "CSCO", "TMO",  "ACN",  "MCD",
-    "CRM",  "NEE",  "DHR",  "TXN",  "NFLX",
-    "QCOM", "AMD",  "LOW",  "BMY",  "ORCL",
-    "PM",   "RTX",  "HON",  "SBUX", "IBM",
-    "GE",   "CAT",  "BA",   "MMM",  "GS",
-]
+def get_sp500_tickers():
+    """Fetch all S&P 500 tickers automatically from Wikipedia."""
+    try:
+        table    = pd.read_html("https://en.wikipedia.org/wiki/List_of_S%26P_500_companies")
+        tickers  = table[0]["Symbol"].tolist()
+        # Fix known ticker format differences (BRK.B -> BRK-B)
+        tickers  = [t.replace(".", "-") for t in tickers]
+        print(f"Fetched {len(tickers)} tickers from Wikipedia.")
+        return tickers
+    except Exception as e:
+        print(f"Could not fetch from Wikipedia: {e}")
+        print("Falling back to top 50 hardcoded list.")
+        return [
+            "AAPL", "MSFT", "GOOGL", "AMZN", "META",
+            "TSLA", "NVDA", "JPM",   "V",    "JNJ",
+            "WMT",  "PG",   "MA",    "UNH",  "HD",
+            "BAC",  "XOM",  "ABBV",  "MRK",  "CVX",
+            "LLY",  "AVGO", "COST",  "PEP",  "KO",
+            "ADBE", "CSCO", "TMO",   "ACN",  "MCD",
+            "CRM",  "NEE",  "DHR",   "TXN",  "NFLX",
+            "QCOM", "AMD",  "LOW",   "BMY",  "ORCL",
+            "PM",   "RTX",  "HON",   "SBUX", "IBM",
+            "GE",   "CAT",  "BA",    "MMM",  "GS",
+        ]
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 def create_sequences(data, lookback):
@@ -55,7 +67,7 @@ def create_sequences(data, lookback):
 # ── Download data ─────────────────────────────────────────────────────────────
 print("=" * 55)
 print("  General LSTM Model Training")
-print("  Top 50 S&P 500 Companies | yfinance | 2013 to today")
+print("  All S&P 500 Companies | yfinance | 2013 to today")
 print("=" * 55)
 
 try:
@@ -72,8 +84,10 @@ all_X      = []
 all_y      = []
 successful = []
 
-for idx, ticker in enumerate(TOP_50, 1):
-    print(f"[{idx:02d}/{len(TOP_50)}] {ticker:<6} ", end="", flush=True)
+TICKERS = get_sp500_tickers()
+
+for idx, ticker in enumerate(TICKERS, 1):
+    print(f"[{idx:03d}/{len(TICKERS)}] {ticker:<6} ", end="", flush=True)
     try:
         raw = yf.download(ticker, start=START_DATE, end=end_date,
                           interval="1d", progress=False, auto_adjust=True)
@@ -81,7 +95,11 @@ for idx, ticker in enumerate(TOP_50, 1):
             print("skipped (not enough data)")
             continue
 
-        close  = raw["Close"].values.reshape(-1, 1)
+        # Handle both flat and multi-level columns (yfinance 1.3+)
+        close_col = raw["Close"]
+        if isinstance(close_col, pd.DataFrame):
+            close_col = close_col.iloc[:, 0]
+        close  = close_col.values.reshape(-1, 1)
         scaler = MinMaxScaler(feature_range=(0, 1))
         scaled = scaler.fit_transform(close)
 
@@ -93,7 +111,7 @@ for idx, ticker in enumerate(TOP_50, 1):
     except Exception as e:
         print(f"error — {e}")
 
-print(f"\nSuccessfully processed: {len(successful)} / {len(TOP_50)} companies")
+print(f"\nSuccessfully processed: {len(successful)} / {len(TICKERS)} companies")
 print(f"Companies: {', '.join(successful)}\n")
 
 if not all_X:
@@ -140,7 +158,7 @@ early_stop = EarlyStopping(
 )
 
 # ── Train ─────────────────────────────────────────────────────────────────────
-print("\nTraining started — this will take 30-60 minutes...")
+print("\nTraining started — this will take 2-8 hours for all 500 companies...")
 print("(Early stopping will end it sooner if the model converges)\n")
 
 history = model.fit(
