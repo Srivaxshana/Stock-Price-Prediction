@@ -21,5 +21,6 @@ streamlit run app.py
 Notes
 - Place trained models and scalers under `models/` (script saves as `models/lstm_<TICKER>.h5` and `models/scaler_<TICKER>.bin`).
 - The notebook `stock-price-direction-forecasting-with-lstm.ipynb` contains EDA and a training cell you can run interactively.
+- The Streamlit app can optionally download the latest prices on demand (Yahoo Finance) if `yfinance` is installed.
 - The LaTeX proposal source is `proposal.tex` — compile locally with `pdflatex proposal.tex` to produce the PDF required for submission.
 

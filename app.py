@@ -65,6 +65,69 @@ def load_model():
         return None
 
 
+def _has_yfinance() -> bool:
+    try:
+        import yfinance  # noqa: F401
+        return True
+    except Exception:
+        return False
+
+
+@st.cache_data(ttl=60 * 60, show_spinner=False)
+def load_live_data(symbol: str) -> pd.DataFrame:
+    import yfinance as yf
+
+    raw = yf.download(
+        symbol,
+        period="max",
+        auto_adjust=False,
+        progress=False,
+        threads=False,
+    )
+    if raw is None or raw.empty:
+        return pd.DataFrame(columns=["date", "open", "high", "low", "close", "volume"])
+
+    # yfinance can return MultiIndex columns even for a single ticker depending on version/config.
+    if isinstance(raw.columns, pd.MultiIndex):
+        level_vals = raw.columns.get_level_values(-1)
+        if symbol in set(level_vals):
+            raw = raw.xs(symbol, axis=1, level=-1, drop_level=True)
+        else:
+            raw.columns = raw.columns.get_level_values(0)
+            raw = raw.loc[:, ~raw.columns.duplicated()]
+
+    raw = raw.reset_index()
+    date_col = "Date" if "Date" in raw.columns else ("Datetime" if "Datetime" in raw.columns else None)
+    if not date_col:
+        return pd.DataFrame(columns=["date", "open", "high", "low", "close", "volume"])
+
+    def _series_1d(col_name: str):
+        val = raw.get(col_name, np.nan)
+        if isinstance(val, pd.DataFrame):
+            if val.shape[1] == 0:
+                return np.nan
+            return val.iloc[:, 0]
+        return val
+
+    out = pd.DataFrame(
+        {
+            "date": pd.to_datetime(raw[date_col]),
+            "open": _series_1d("Open"),
+            "high": _series_1d("High"),
+            "low": _series_1d("Low"),
+            "close": _series_1d("Close"),
+            "volume": _series_1d("Volume"),
+        }
+    )
+    out = (
+        out.dropna(subset=["date", "close"])
+        .sort_values("date")
+        .drop_duplicates(subset=["date"])
+        .reset_index(drop=True)
+    )
+    return out
+
+
 df    = load_data(DATA_PATH)
 model = load_model()
 
@@ -75,9 +138,33 @@ with st.sidebar:
     default_idx  = companies.index("AAPL") if "AAPL" in companies else 0
     selected_company = st.selectbox("Company", companies, index=default_idx)
 
-    company_df = df[df["Name"] == selected_company].copy()
-    min_date   = company_df["date"].min().date()
-    max_date   = company_df["date"].max().date()
+    has_yf = _has_yfinance()
+    use_live = st.toggle(
+        "Use live prices (Yahoo Finance)",
+        value=has_yf,
+        disabled=not has_yf,
+        help="Downloads latest market data on demand. Requires `yfinance`.",
+    )
+    if not has_yf:
+        st.caption("Install `yfinance` to enable live prices.")
+
+    ticker = selected_company
+    if use_live:
+        ticker = st.text_input("Ticker symbol", value=selected_company).strip().upper() or selected_company
+        with st.spinner(f"Downloading latest data for {ticker}..."):
+            live_df = load_live_data(ticker)
+        if live_df.empty:
+            st.error(f"No live data found for ticker `{ticker}`. Falling back to CSV dataset.")
+            use_live = False
+
+    if use_live:
+        company_df = live_df.copy()
+        min_date = company_df["date"].min().date()
+        max_date = company_df["date"].max().date()
+    else:
+        company_df = df[df["Name"] == selected_company].copy()
+        min_date   = company_df["date"].min().date()
+        max_date   = company_df["date"].max().date()
 
     date_range = st.date_input(
         "Date range",
@@ -179,7 +266,7 @@ with tab2:
             "Predictions use MinMax scaling and a 2-layer LSTM architecture."
         )
 
-        stock_data = df[df["Name"] == selected_company][["date", "close"]].copy()
+        stock_data = company_df[["date", "close"]].copy()
         stock_data = stock_data.sort_values("date").reset_index(drop=True)
 
         if len(stock_data) < LOOKBACK + 20:
