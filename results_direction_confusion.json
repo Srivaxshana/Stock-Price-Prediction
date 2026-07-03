@@ -1,0 +1,20 @@
+{
+  "accuracy_pct": 49.58,
+  "precision_up_pct": 57.89,
+  "recall_up_pct": 8.87,
+  "f1_up_pct": 15.38,
+  "confusion_matrix": [
+    [
+      108,
+      8
+    ],
+    [
+      113,
+      11
+    ]
+  ],
+  "labels": [
+    "Down",
+    "Up"
+  ]
+}

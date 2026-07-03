@@ -1,0 +1,86 @@
+{
+  "per_ticker": [
+    {
+      "ticker": "AAPL",
+      "test_sequences": 252,
+      "mse": 24.0538,
+      "rmse": 4.9045,
+      "mae": 3.6782,
+      "mape_pct": 2.24,
+      "avg_price": 155.63,
+      "rmse_pct_of_price": 3.15
+    },
+    {
+      "ticker": "MSFT",
+      "test_sequences": 252,
+      "mse": 7.9725,
+      "rmse": 2.8236,
+      "mae": 1.7972,
+      "mape_pct": 2.17,
+      "avg_price": 74.73,
+      "rmse_pct_of_price": 3.78
+    },
+    {
+      "ticker": "AMZN",
+      "test_sequences": 252,
+      "mse": 4489.3961,
+      "rmse": 67.003,
+      "mae": 38.1781,
+      "mape_pct": 3.21,
+      "avg_price": 1021.08,
+      "rmse_pct_of_price": 6.56
+    },
+    {
+      "ticker": "NFLX",
+      "test_sequences": 252,
+      "mse": 188.6412,
+      "rmse": 13.7347,
+      "mae": 7.2894,
+      "mape_pct": 3.49,
+      "avg_price": 175.85,
+      "rmse_pct_of_price": 7.81
+    },
+    {
+      "ticker": "AMD",
+      "test_sequences": 252,
+      "mse": 0.2197,
+      "rmse": 0.4687,
+      "mae": 0.3193,
+      "mape_pct": 2.57,
+      "avg_price": 12.54,
+      "rmse_pct_of_price": 3.74
+    },
+    {
+      "ticker": "KO",
+      "test_sequences": 252,
+      "mse": 0.0906,
+      "rmse": 0.301,
+      "mae": 0.215,
+      "mape_pct": 0.48,
+      "avg_price": 44.86,
+      "rmse_pct_of_price": 0.67
+    },
+    {
+      "ticker": "JNJ",
+      "test_sequences": 252,
+      "mse": 2.7301,
+      "rmse": 1.6523,
+      "mae": 1.2044,
+      "mape_pct": 0.89,
+      "avg_price": 132.54,
+      "rmse_pct_of_price": 1.25
+    },
+    {
+      "ticker": "PG",
+      "test_sequences": 252,
+      "mse": 0.4578,
+      "rmse": 0.6766,
+      "mae": 0.4594,
+      "mape_pct": 0.52,
+      "avg_price": 89.7,
+      "rmse_pct_of_price": 0.75
+    }
+  ],
+  "avg_rmse_pct": 3.46,
+  "avg_mape_pct": 1.95
+}

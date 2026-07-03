@@ -1,0 +1,26 @@
+[
+  {
+    "model": "Naive (t-1)",
+    "mse": 3.6791,
+    "rmse": 1.9181,
+    "mae": 1.3305,
+    "mape_pct": 0.84,
+    "rmse_pct_of_price": 1.22
+  },
+  {
+    "model": "Linear Regression",
+    "mse": 3.7107,
+    "rmse": 1.9263,
+    "mae": 1.3741,
+    "mape_pct": 0.87,
+    "rmse_pct_of_price": 1.23
+  },
+  {
+    "model": "LSTM (ours)",
+    "mse": 8.4401,
+    "rmse": 2.9052,
+    "mae": 2.31,
+    "mape_pct": 1.44,
+    "rmse_pct_of_price": 1.85
+  }
+]
